@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>운전면허 학과시험</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1d2329;--muted:#6b7480;--line:#e2e5e9;--pri:#2563eb;--ok:#15803d;--okbg:#e8f6ec;--bad:#c62828;--badbg:#fdecec;--sel:#e8effd}
+@media (prefers-color-scheme:dark){:root{--bg:#14171b;--card:#1d2127;--fg:#e8eaed;--muted:#9aa3ad;--line:#2f353d;--pri:#5b8dff;--ok:#4ade80;--okbg:#16301f;--bad:#f87171;--badbg:#3a1d1d;--sel:#1f2b45}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:"Pretendard","Malgun Gothic",system-ui,sans-serif;line-height:1.6}
+.wrap{max-width:860px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+header h1{font-size:20px;margin:0;cursor:pointer}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.menu{cursor:pointer;transition:transform .1s}.menu:hover{transform:translateY(-2px);border-color:var(--pri)}
+.menu h2{margin:0 0 4px;font-size:18px}.muted{color:var(--muted);font-size:14px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:8px 14px;cursor:pointer}
+button:hover{border-color:var(--pri)}button.pri{background:var(--pri);color:#fff;border-color:var(--pri)}
+button:disabled{opacity:.4;cursor:default}
+.qno{font-weight:700;color:var(--pri)}
+.qtext{font-size:18px;font-weight:600;margin:6px 0 14px;white-space:pre-wrap}
+.qimg{max-width:100%;border-radius:8px;border:1px solid var(--line);margin:4px 0 12px;display:block}
+.opt{display:block;width:100%;text-align:left;padding:12px 14px;margin:8px 0;font-size:16px}
+.opt.sel{background:var(--sel);border-color:var(--pri)}
+.opt.correct{background:var(--okbg);border-color:var(--ok)}
+.opt.wrong{background:var(--badbg);border-color:var(--bad)}
+.exp{border-left:4px solid var(--pri);padding:10px 14px;background:var(--bg);border-radius:6px;margin-top:14px;white-space:pre-wrap}
+.verdict{font-weight:700;margin-top:12px}.verdict.ok{color:var(--ok)}.verdict.bad{color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.sp{flex:1}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--pri)}
+.timer{font-variant-numeric:tabular-nums;font-weight:700;font-size:20px}.timer.low{color:var(--bad)}
+.nav{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+.nav button{padding:6px 0;font-size:13px}.nav .done{background:var(--sel)}.nav .cur{border-color:var(--pri);border-width:2px}
+.nav .w{background:var(--badbg);border-color:var(--bad)}.nav .c{background:var(--okbg)}
+.big{font-size:44px;font-weight:800;margin:0}
+.sit{margin:0 0 10px;padding:10px 14px 10px 30px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:15px}
+.note{padding:10px 14px;background:var(--sel);border-radius:8px;font-size:14px;margin-bottom:10px}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--line);color:var(--muted);margin-left:6px}
+input[type=number]{font:inherit;width:90px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+@media (max-width:560px){.nav{grid-template-columns:repeat(8,1fr)}.qtext{font-size:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1 onclick="go('home')">🚗 1종보통 학과시험</h1><span id="hdr" class="muted"></span></header>
+  <div id="app"></div>
+</div>
+
+<script src="data/questions.js"></script>
+<script>
+// ===== 데이터 =====
+const Q = (window.QUESTIONS || []).slice().sort((a, b) => a.id - b.id);
+const byId = new Map(Q.map(q => [q.id, q]));
+const KEY = 'dlq_v1';
+const EXAM_COUNT = 40, EXAM_SEC = 40 * 60, PASS = 70;
+// 실제 시험 유형별 출제 수/배점 (유형 정보가 없으면 무작위 40문제, 문항당 2.5점)
+// 동영상 문제는 PDF에 영상이 없어 풀 수 없으므로, 그 1문제(5점)는 사진형/일러스트형에서 대신 출제
+const COMPOSITION = [
+  { types: ['text'], multi: false, n: 17, pts: 2 },
+  { types: ['text'], multi: true,  n: 4,  pts: 3 },
+  { types: ['sign'],               n: 5,  pts: 2 },
+  { types: ['photo'],              n: 6,  pts: 3 },
+  { types: ['illust'],             n: 7,  pts: 3 },
+  { types: ['photo', 'illust'],    n: 1,  pts: 5 },
+];
+const SECTIONS = [[1, '문장형'], [681, '사진형'], [781, '일러스트형'], [866, '안전표지'], [966, '동영상']];
+const TYPE_LABEL = { text: '문장형', sign: '안전표지', photo: '사진형', illust: '일러스트형', video: '동영상', image: '그림' };
+
+function load() {
+  try { return Object.assign({ last: 0, wrong: [], answered: {}, exams: [], exam: null }, JSON.parse(localStorage.getItem(KEY) || '{}')); }
+  catch { return { last: 0, wrong: [], answered: {}, exams: [], exam: null }; }
+}
+let S = load();
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
+
+const $app = document.getElementById('app');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const C = '①②③④⑤';
+const sameSet = (a, b) => a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const need = q => Math.max(1, q.answer.length);
+
+function addWrong(id) { if (!S.wrong.includes(id)) S.wrong.push(id); }
+function removeWrong(id) { S.wrong = S.wrong.filter(x => x !== id); }
+
+// 문제 본문: 질문 + 그림 + 상황 설명
+function qBody(q) {
+  return `<div class="qtext">${esc(q.question)}</div>
+    ${q.type === 'video' ? '<div class="note">🎬 이 문제의 영상은 PDF에 없습니다. 도로교통공단 홈페이지 문제은행에서 영상을 확인하세요.</div>' : ''}
+    ${(q.images || []).map(src => `<img class="qimg" src="${esc(src)}" alt="문제 그림">`).join('')}
+    ${(q.situation || []).length ? `<ul class="sit">${q.situation.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}`;
+}
+function expBox(q) {
+  return `<div class="exp"><b>해설</b>\n${esc(q.explanation || ((q.exp_images || []).length ? '' : '(해설 없음)'))}${(q.exp_images || []).map(src => `<img class="qimg" src="${esc(src)}" alt="해설 그림">`).join('')}</div>`;
+}
+
+let timerId = null;
+function go(view, arg) {
+  clearInterval(timerId); timerId = null;
+  document.onkeydown = null;
+  ({ home, study, wrong: wrongList, exam, result })[view](arg);
+  window.scrollTo(0, 0);
+}
+
+// ===== 홈 =====
+function home() {
+  document.getElementById('hdr').textContent = '';
+  if (!Q.length) {
+    $app.innerHTML = `<div class="card"><h2>문제 데이터가 없습니다</h2>
+      <p>README의 안내대로 <code>python tools/parse_pdf.py "PDF경로"</code>를 실행해 <code>data/questions.js</code>를 만든 뒤 새로고침하세요.</p></div>`;
+    return;
+  }
+  const done = Object.keys(S.answered).length;
+  const correct = Object.values(S.answered).filter(Boolean).length;
+  const last = S.exams.slice(-5).reverse();
+  $app.innerHTML = `
+  <div class="grid3">
+    <div class="card menu" onclick="go('study',{mode:'all'})"><h2>📘 학습</h2>
+      <div class="muted">PDF 순서대로 · 이어서 ${S.last + 1}번부터</div>
+      <div class="bar" style="margin-top:10px"><i style="width:${done / Q.length * 100}%"></i></div>
+      <div class="muted">${done} / ${Q.length} 풀이 · 정답률 ${done ? Math.round(correct / done * 100) : 0}%</div></div>
+    <div class="card menu" onclick="go('wrong')"><h2>❌ 오답노트</h2>
+      <div class="muted">틀린 문제 ${S.wrong.length}개</div></div>
+    <div class="card menu" onclick="startExam()"><h2>📝 모의시험</h2>
+      <div class="muted">랜덤 ${EXAM_COUNT}문제 · ${EXAM_SEC / 60}분 · ${PASS}점 합격 · 실제 시험 유형 구성</div>
+      ${S.exam ? '<div class="muted" style="color:var(--pri)">진행 중인 시험이 있습니다 → 이어하기</div>' : ''}</div>
+  </div>
+  <div class="card"><div class="row"><b>학습 위치 이동</b><span class="sp"></span>
+    <input type="number" id="jump" min="1" max="${Q.length}" value="${S.last + 1}">
+    <button onclick="S.last=Math.min(Q.length,Math.max(1,+jump.value))-1;save();go('study',{mode:'all'})">이동</button></div>
+    <div class="row" style="margin-top:8px">${SECTIONS.map(([n, name]) => `<button onclick="S.last=${n - 1};save();go('study',{mode:'all'})">${name} (${n}~)</button>`).join('')}</div></div>
+  <div class="card"><b>최근 모의시험</b>
+    ${last.length ? last.map(e => `<div class="row" style="margin-top:6px"><span>${new Date(e.at).toLocaleString('ko-KR')}</span><span class="sp"></span>
+      <b style="color:${e.score >= PASS ? 'var(--ok)' : 'var(--bad)'}">${e.score}점 ${e.score >= PASS ? '합격' : '불합격'}</b></div>`).join('')
+      : '<div class="muted">아직 기록이 없습니다.</div>'}
+  </div>
+  <div class="row"><span class="sp"></span><button onclick="if(confirm('학습 기록·오답노트·시험 기록을 모두 지울까요?')){localStorage.removeItem(KEY);S=load();go('home')}">기록 초기화</button></div>`;
+}
+
+// ===== 학습 / 오답 풀이 =====
+// ctx: {mode:'all'} 전체 순서 학습, {mode:'wrong', ids:[...], i} 오답 풀이
+function study(ctx) {
+  const list = ctx.mode === 'all' ? Q : ctx.ids.map(id => byId.get(id)).filter(Boolean);
+  let i = ctx.mode === 'all' ? Math.min(S.last, Q.length - 1) : (ctx.i || 0);
+  if (!list.length) return go('wrong');
+  let picked = [], revealed = false;
+
+  function render() {
+    const q = list[i];
+    if (ctx.mode === 'all') { S.last = i; save(); }
+    document.getElementById('hdr').textContent = ctx.mode === 'all' ? `학습 ${i + 1} / ${list.length}` : `오답 ${i + 1} / ${list.length}`;
+    const ok = revealed && sameSet(picked, q.answer);
+    $app.innerHTML = `<div class="card">
+      <div><span class="qno">${q.id}번</span><span class="tag">${TYPE_LABEL[q.type] || ''}</span>${q.multi ? `<span class="tag">${need(q)}개 선택</span>` : ''}
+        ${S.wrong.includes(q.id) ? '<span class="tag" style="color:var(--bad)">오답노트</span>' : ''}</div>
+      ${qBody(q)}
+      ${q.options.map((o, k) => {
+        let cls = 'opt';
+        if (revealed) { if (q.answer.includes(k)) cls += ' correct'; else if (picked.includes(k)) cls += ' wrong'; }
+        else if (picked.includes(k)) cls += ' sel';
+        return `<button class="${cls}" data-k="${k}" ${revealed ? 'disabled style="opacity:1"' : ''}>${C[k]} ${esc(o)}</button>`;
+      }).join('')}
+      ${!revealed && q.multi ? `<button class="pri" id="chk" ${picked.length !== need(q) ? 'disabled' : ''}>정답 확인</button>` : ''}
+      ${revealed ? `<div class="verdict ${ok ? 'ok' : 'bad'}">${ok ? '⭕ 정답입니다' : '❌ 오답입니다'} — 정답: ${q.answer.map(k => C[k]).join(', ')}</div>
+        ${expBox(q)}` : ''}
+    </div>
+    <div class="row">
+      <button onclick="go('home')">홈</button><span class="sp"></span>
+      ${ctx.mode === 'wrong' && S.wrong.includes(q.id) ? `<button id="rm">오답노트에서 제거</button>` : ''}
+      <button id="prev" ${i === 0 ? 'disabled' : ''}>← 이전</button>
+      <button class="pri" id="next">${i === list.length - 1 ? (ctx.mode === 'all' ? '처음으로' : '완료') : '다음 →'}</button>
+    </div>`;
+    $app.querySelectorAll('.opt').forEach(b => b.onclick = () => pick(+b.dataset.k));
+    const chk = document.getElementById('chk'); if (chk) chk.onclick = reveal;
+    const rm = document.getElementById('rm'); if (rm) rm.onclick = () => { removeWrong(q.id); save(); render(); };
+    document.getElementById('prev').onclick = () => move(-1);
+    document.getElementById('next').onclick = () => move(1);
+  }
+  function pick(k) {
+    if (revealed) return;
+    const q = list[i];
+    if (!q.multi) { picked = [k]; return reveal(); }
+    picked = picked.includes(k) ? picked.filter(x => x !== k) : (picked.length < need(q) ? [...picked, k] : picked);
+    render();
+  }
+  function reveal() {
+    const q = list[i];
+    revealed = true;
+    const ok = sameSet(picked, q.answer);
+    S.answered[q.id] = ok;
+    if (!ok) addWrong(q.id);
+    save(); render();
+  }
+  function move(d) {
+    if (d > 0 && i === list.length - 1) {
+      if (ctx.mode === 'all') i = 0; else return go('wrong');
+    } else i = Math.max(0, Math.min(list.length - 1, i + d));
+    picked = []; revealed = false; render(); window.scrollTo(0, 0);
+  }
+  document.onkeydown = e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key >= '1' && e.key <= '5') pick(+e.key - 1);
+    else if (e.key === 'ArrowRight') move(1);
+    else if (e.key === 'ArrowLeft') move(-1);
+    else if (e.key === 'Enter') { const q = list[i]; if (!revealed && q.multi && picked.length === need(q)) reveal(); else if (revealed) move(1); }
+  };
+  render();
+}
+
+function wrongList() {
+  document.getElementById('hdr').textContent = '오답노트';
+  const ids = S.wrong.slice().sort((a, b) => a - b);
+  $app.innerHTML = `<div class="card"><div class="row"><b>틀린 문제 ${ids.length}개</b><span class="sp"></span>
+      <button class="pri" ${ids.length ? '' : 'disabled'} onclick="go('study',{mode:'wrong',ids:${JSON.stringify(ids)}})">순서대로 다시 풀기</button>
+      <button ${ids.length ? '' : 'disabled'} onclick="go('study',{mode:'wrong',ids:shuffle(${JSON.stringify(ids)})})">섞어서 풀기</button></div>
+    <p class="muted">학습·모의시험에서 틀린 문제가 자동으로 모입니다. 다시 풀 때 '오답노트에서 제거'로 정리하세요.</p></div>
+    ${ids.map((id, k) => { const q = byId.get(id); return q ? `<div class="card menu" style="padding:14px" onclick="go('study',{mode:'wrong',ids:${JSON.stringify(ids)},i:${k}})">
+      <span class="qno">${id}번</span> ${esc(q.question.slice(0, 90))}${q.question.length > 90 ? '…' : ''}</div>` : ''; }).join('')}
+    <button onclick="go('home')">홈</button>`;
+}
+
+// ===== 모의시험 =====
+function pickExam() {
+  const fits = c => q => c.types.includes(q.type) && (c.multi === undefined || !!q.multi === c.multi);
+  if (COMPOSITION.every(c => Q.filter(fits(c)).length >= c.n)) {
+    const out = [], used = new Set();
+    for (const c of COMPOSITION) {
+      shuffle(Q.filter(q => fits(c)(q) && !used.has(q.id))).slice(0, c.n)
+        .forEach(q => { used.add(q.id); out.push({ id: q.id, pts: c.pts }); });
+    }
+    return out;
+  }
+  return shuffle(Q).slice(0, EXAM_COUNT).map(q => ({ id: q.id, pts: 100 / EXAM_COUNT }));
+}
+function startExam() {
+  if (S.exam && !confirm('진행 중인 시험을 이어서 보시겠습니까?\n(취소 = 새 시험 시작)')) S.exam = null;
+  if (!S.exam) {
+    S.exam = { items: pickExam(), answers: {}, start: Date.now(), i: 0 };
+    save();
+  }
+  go('exam');
+}
+function exam() {
+  const E = S.exam;
+  const left = () => Math.max(0, Math.round((E.start + EXAM_SEC * 1000 - Date.now()) / 1000));
+  function render() {
+    const it = E.items[E.i], q = byId.get(it.id), mine = E.answers[it.id] || [];
+    const answeredN = E.items.filter(x => (E.answers[x.id] || []).length).length;
+    document.getElementById('hdr').textContent = `모의시험 · ${answeredN}/${E.items.length} 답안 작성`;
+    $app.innerHTML = `<div class="card"><div class="row"><b>문제 ${E.i + 1} / ${E.items.length}</b><span class="tag">${Number.isInteger(it.pts) ? it.pts : it.pts.toFixed(1)}점</span>
+        <span class="sp"></span><span>남은 시간 </span><span class="timer" id="tm"></span></div></div>
+      <div class="card">
+        ${q.multi ? `<div class="muted">정답 ${need(q)}개를 고르세요</div>` : ''}
+        ${qBody(q)}
+        ${q.options.map((o, k) => `<button class="opt ${mine.includes(k) ? 'sel' : ''}" data-k="${k}">${C[k]} ${esc(o)}</button>`).join('')}
+      </div>
+      <div class="row" style="margin-bottom:16px"><button id="prev" ${E.i === 0 ? 'disabled' : ''}>← 이전</button><span class="sp"></span>
+        <button id="next" ${E.i === E.items.length - 1 ? 'disabled' : ''}>다음 →</button><button class="pri" id="sub">답안 제출</button></div>
+      <div class="card"><div class="nav">${E.items.map((x, k) => `<button data-n="${k}" class="${(E.answers[x.id] || []).length ? 'done' : ''} ${k === E.i ? 'cur' : ''}">${k + 1}</button>`).join('')}</div></div>
+      <div class="row"><button onclick="if(confirm('시험을 중단하고 홈으로 갈까요? (나중에 이어서 볼 수 있지만 시간은 계속 흐릅니다)'))go('home')">홈</button></div>`;
+    $app.querySelectorAll('.opt').forEach(b => b.onclick = () => pick(+b.dataset.k));
+    $app.querySelectorAll('.nav button').forEach(b => b.onclick = () => { E.i = +b.dataset.n; save(); render(); });
+    document.getElementById('prev').onclick = () => { E.i--; save(); render(); };
+    document.getElementById('next').onclick = () => { E.i++; save(); render(); };
+    document.getElementById('sub').onclick = () => {
+      const blank = E.items.length - E.items.filter(x => (E.answers[x.id] || []).length).length;
+      if (confirm(blank ? `답하지 않은 문제가 ${blank}개 있습니다. 제출할까요?` : '답안을 제출할까요?')) finish();
+    };
+    tick();
+  }
+  function pick(k) {
+    const it = E.items[E.i], q = byId.get(it.id);
+    let cur = E.answers[it.id] || [];
+    if (!q.multi) cur = [k];
+    else cur = cur.includes(k) ? cur.filter(x => x !== k) : (cur.length < need(q) ? [...cur, k] : [...cur.slice(1), k]);
+    E.answers[it.id] = cur; save(); render();
+  }
+  function tick() {
+    const s = left(), el = document.getElementById('tm');
+    if (el) { el.textContent = `${String(s / 60 | 0).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; el.classList.toggle('low', s < 300); }
+    if (s <= 0) { alert('시험 시간이 종료되어 자동 제출됩니다.'); finish(); }
+  }
+  function finish() {
+    clearInterval(timerId); timerId = null;
+    let score = 0;
+    const detail = E.items.map(it => {
+      const q = byId.get(it.id), mine = E.answers[it.id] || [], ok = sameSet(mine, q.answer);
+      if (ok) score += it.pts; else addWrong(q.id);
+      return { id: it.id, pts: it.pts, mine, ok };
+    });
+    score = Math.round(score * 10) / 10;
+    const rec = { at: Date.now(), score, sec: Math.min(EXAM_SEC, Math.round((Date.now() - E.start) / 1000)), detail };
+    S.exams.push(rec); S.exams = S.exams.slice(-30); S.exam = null; save();
+    go('result', rec);
+  }
+  document.onkeydown = e => {
+    if (e.key >= '1' && e.key <= '5') pick(+e.key - 1);
+    else if (e.key === 'ArrowRight' && E.i < E.items.length - 1) { E.i++; save(); render(); }
+    else if (e.key === 'ArrowLeft' && E.i > 0) { E.i--; save(); render(); }
+  };
+  if (left() <= 0) return finish();
+  render();
+  timerId = setInterval(tick, 1000);
+}
+
+function result(rec) {
+  const pass = rec.score >= PASS, wrong = rec.detail.filter(d => !d.ok);
+  document.getElementById('hdr').textContent = '시험 결과';
+  $app.innerHTML = `<div class="card" style="text-align:center">
+      <p class="big" style="color:${pass ? 'var(--ok)' : 'var(--bad)'}">${rec.score}점</p>
+      <h2 style="margin:4px 0">${pass ? '🎉 합격' : '불합격'} <span class="muted">(합격 기준 ${PASS}점)</span></h2>
+      <div class="muted">맞힌 문제 ${rec.detail.length - wrong.length} / ${rec.detail.length} · 소요 ${rec.sec / 60 | 0}분 ${rec.sec % 60}초</div>
+      <div class="row" style="justify-content:center;margin-top:12px"><button onclick="go('home')">홈</button><button class="pri" onclick="startExam()">새 모의시험</button></div></div>
+    <div class="card"><div class="nav">${rec.detail.map((d, k) => `<button class="${d.ok ? 'c' : 'w'}" onclick="document.getElementById('r${k}')?.scrollIntoView({behavior:'smooth'})">${k + 1}</button>`).join('')}</div></div>
+    <h3>틀린 문제 ${wrong.length}개 ${wrong.length ? '<span class="muted">(오답노트에 자동 추가됨)</span>' : ''}</h3>
+    ${rec.detail.map((d, k) => {
+      if (d.ok) return '';
+      const q = byId.get(d.id);
+      return `<div class="card" id="r${k}"><div><span class="qno">문제 ${k + 1}</span><span class="tag">원본 ${q.id}번</span></div>
+        ${qBody(q)}
+        ${q.options.map((o, j) => `<div class="opt ${q.answer.includes(j) ? 'correct' : d.mine.includes(j) ? 'wrong' : ''}" style="border:1px solid var(--line);border-radius:8px">${C[j]} ${esc(o)}</div>`).join('')}
+        <div class="verdict bad">내 답: ${d.mine.length ? d.mine.map(j => C[j]).join(', ') : '미응답'} · 정답: ${q.answer.map(j => C[j]).join(', ')}</div>
+        ${expBox(q)}</div>`;
+    }).join('')}`;
+}
+
+go('home');
+</script>
+</body>
+</html>
