@@ -56,7 +56,7 @@ const byId = new Map(Q.map(q => [q.id, q]));
 const KEY = 'dlq_v1';
 const EXAM_COUNT = 40, EXAM_SEC = 40 * 60, PASS = 70;
 // 실제 시험 유형별 출제 수/배점 (유형 정보가 없으면 무작위 40문제, 문항당 2.5점)
-// 동영상 문제는 PDF에 영상이 없어 풀 수 없으므로, 그 1문제(5점)는 사진형/일러스트형에서 대신 출제
+// 동영상 문제는 제외했으므로, 실제 시험의 동영상 1문제(5점) 자리는 사진형/일러스트형에서 대신 출제
 const COMPOSITION = [
   { types: ['text'], multi: false, n: 17, pts: 2 },
   { types: ['text'], multi: true,  n: 4,  pts: 3 },
@@ -65,7 +65,7 @@ const COMPOSITION = [
   { types: ['illust'],             n: 7,  pts: 3 },
   { types: ['photo', 'illust'],    n: 1,  pts: 5 },
 ];
-const SECTIONS = [[1, '문장형'], [681, '사진형'], [781, '일러스트형'], [866, '안전표지'], [966, '동영상']];
+const SECTIONS = [[1, '문장형'], [681, '사진형'], [781, '일러스트형'], [866, '안전표지']];
 const TYPE_LABEL = { text: '문장형', sign: '안전표지', photo: '사진형', illust: '일러스트형', video: '동영상', image: '그림' };
 
 function load() {
@@ -73,6 +73,7 @@ function load() {
   catch { return { last: 0, wrong: [], answered: {}, exams: [], exam: null }; }
 }
 let S = load();
+S.wrong = S.wrong.filter(id => byId.has(id));
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
 
 const $app = document.getElementById('app');
@@ -88,7 +89,6 @@ function removeWrong(id) { S.wrong = S.wrong.filter(x => x !== id); }
 // 문제 본문: 질문 + 그림 + 상황 설명
 function qBody(q) {
   return `<div class="qtext">${esc(q.question)}</div>
-    ${q.type === 'video' ? '<div class="note">🎬 이 문제의 영상은 PDF에 없습니다. 도로교통공단 홈페이지 문제은행에서 영상을 확인하세요.</div>' : ''}
     ${(q.images || []).map(src => `<img class="qimg" src="${esc(src)}" alt="문제 그림">`).join('')}
     ${(q.situation || []).length ? `<ul class="sit">${q.situation.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}`;
 }
@@ -235,6 +235,7 @@ function pickExam() {
   return shuffle(Q).slice(0, EXAM_COUNT).map(q => ({ id: q.id, pts: 100 / EXAM_COUNT }));
 }
 function startExam() {
+  if (S.exam && S.exam.items.some(x => !byId.has(x.id))) S.exam = null;
   if (S.exam && !confirm('진행 중인 시험을 이어서 보시겠습니까?\n(취소 = 새 시험 시작)')) S.exam = null;
   if (!S.exam) {
     S.exam = { items: pickExam(), answers: {}, start: Date.now(), i: 0 };

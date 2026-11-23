@@ -191,7 +191,13 @@ def main():
 
     doc = pymupdf.open(args.pdf)
     qs = parse(doc, args.dump)
+    # 동영상 문제(966~1000)는 PDF에 영상이 없어 풀 수 없으므로 제외
     attach_images(doc, qs)
+    for q in qs:
+        if classify(q) == "video":
+            for f in q["images"] + q["exp_images"]:
+                (ROOT / f).unlink()
+    qs = [q for q in qs if classify(q) != "video"]
     for q in qs:
         q["type"] = classify(q)
         q["multi"] = len(q["answer"]) > 1
@@ -212,7 +218,7 @@ def main():
     print("그림 포함 문제:", sum(1 for q in qs if q["images"]), "/ 해설 그림:", sum(1 for q in qs if q["exp_images"]))
     if bad:
         print(f"[경고] 인식 이상 {len(bad)}개: {bad}")
-    return 0 if len(qs) == 1000 and not bad else 1
+    return 0 if len(qs) == 965 and not bad else 1
 
 
 if __name__ == "__main__":
