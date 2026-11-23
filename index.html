@@ -39,6 +39,10 @@ button:disabled{opacity:.4;cursor:default}
 .note{padding:10px 14px;background:var(--sel);border-radius:8px;font-size:14px;margin-bottom:10px}
 .score{margin:14px auto 4px;border-collapse:collapse;font-size:14px;text-align:center}
 .score th,.score td{border:1px solid var(--line);padding:6px 12px}.score th{background:var(--bg)}
+.wl{display:flex;gap:12px;align-items:flex-start}.wl .pick{width:20px;height:20px;margin-top:3px;flex:none;cursor:pointer}
+.wq{flex:1;cursor:pointer}.wq:hover .qno{text-decoration:underline}
+.chk{display:flex;gap:6px;align-items:center;cursor:pointer}.chk input{width:18px;height:18px}
+button.danger:not(:disabled){background:var(--bad);color:#fff;border-color:var(--bad)}
 .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--line);color:var(--muted);margin-left:6px}
 input[type=number]{font:inherit;width:90px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
 @media (max-width:560px){.nav{grid-template-columns:repeat(8,1fr)}.qtext{font-size:16px}}
@@ -240,14 +244,33 @@ function study(ctx) {
 
 function wrongList() {
   document.getElementById('hdr').textContent = '오답노트';
-  const ids = S.wrong.slice().sort((a, b) => a - b);
+  const ids = S.wrong.filter(id => byId.has(id)).sort((a, b) => a - b);
+  const sel = new Set();
   $app.innerHTML = `<div class="card"><div class="row"><b>틀린 문제 ${ids.length}개</b><span class="sp"></span>
       <button class="pri" ${ids.length ? '' : 'disabled'} onclick="go('study',{mode:'wrong',ids:${JSON.stringify(ids)}})">순서대로 다시 풀기</button>
       <button ${ids.length ? '' : 'disabled'} onclick="go('study',{mode:'wrong',ids:shuffle(${JSON.stringify(ids)})})">섞어서 풀기</button></div>
-    <p class="muted">학습·모의시험에서 틀린 문제가 자동으로 모입니다. 다시 풀 때 '오답노트에서 제거'로 정리하세요.</p></div>
-    ${ids.map((id, k) => { const q = byId.get(id); return q ? `<div class="card menu" style="padding:14px" onclick="go('study',{mode:'wrong',ids:${JSON.stringify(ids)},i:${k}})">
-      <span class="qno">${id}번</span> ${esc(q.question.slice(0, 90))}${q.question.length > 90 ? '…' : ''}</div>` : ''; }).join('')}
+    <p class="muted">학습·모의시험에서 틀린 문제가 자동으로 모입니다. 왼쪽 체크박스로 골라서 한꺼번에 지울 수 있습니다.</p>
+    ${ids.length ? `<div class="row"><label class="chk"><input type="checkbox" id="selAll"> 전체 선택</label>
+      <span class="muted" id="selN">0개 선택</span><span class="sp"></span>
+      <button id="delSel" class="danger" disabled>선택한 문제 삭제</button></div>` : ''}</div>
+    ${ids.map((id, k) => { const q = byId.get(id); return `<div class="card wl" style="padding:14px">
+      <input type="checkbox" class="pick" data-id="${id}" aria-label="${id}번 선택">
+      <div class="menu wq" data-k="${k}"><span class="qno">${id}번</span> <span class="tag">${TYPE_LABEL[q.type] || ''}</span> ${esc(q.question.slice(0, 90))}${q.question.length > 90 ? '…' : ''}</div></div>`; }).join('')}
     <button onclick="go('home')">홈</button>`;
+  if (!ids.length) return;
+  const boxes = [...$app.querySelectorAll('.pick')], all = document.getElementById('selAll');
+  const sync = () => {
+    document.getElementById('selN').textContent = `${sel.size}개 선택`;
+    document.getElementById('delSel').disabled = !sel.size;
+    all.checked = sel.size === ids.length; all.indeterminate = sel.size > 0 && sel.size < ids.length;
+  };
+  boxes.forEach(b => b.onchange = () => { b.checked ? sel.add(+b.dataset.id) : sel.delete(+b.dataset.id); sync(); });
+  all.onchange = () => { boxes.forEach(b => { b.checked = all.checked; all.checked ? sel.add(+b.dataset.id) : sel.delete(+b.dataset.id); }); sync(); };
+  $app.querySelectorAll('.wq').forEach(el => el.onclick = () => go('study', { mode: 'wrong', ids, i: +el.dataset.k }));
+  document.getElementById('delSel').onclick = () => {
+    if (!confirm(`선택한 ${sel.size}개 문제를 오답노트에서 삭제할까요?`)) return;
+    S.wrong = S.wrong.filter(id => !sel.has(id)); save(); wrongList();
+  };
 }
 
 // ===== 모의시험 =====
