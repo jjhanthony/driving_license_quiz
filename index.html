@@ -37,6 +37,8 @@ button:disabled{opacity:.4;cursor:default}
 .big{font-size:44px;font-weight:800;margin:0}
 .sit{margin:0 0 10px;padding:10px 14px 10px 30px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:15px}
 .note{padding:10px 14px;background:var(--sel);border-radius:8px;font-size:14px;margin-bottom:10px}
+.score{margin:14px auto 4px;border-collapse:collapse;font-size:14px;text-align:center}
+.score th,.score td{border:1px solid var(--line);padding:6px 12px}.score th{background:var(--bg)}
 .tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--line);color:var(--muted);margin-left:6px}
 input[type=number]{font:inherit;width:90px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
 @media (max-width:560px){.nav{grid-template-columns:repeat(8,1fr)}.qtext{font-size:16px}}
@@ -54,17 +56,17 @@ input[type=number]{font:inherit;width:90px;padding:7px;border:1px solid var(--li
 const Q = (window.QUESTIONS || []).slice().sort((a, b) => a.id - b.id);
 const byId = new Map(Q.map(q => [q.id, q]));
 const KEY = 'dlq_v1';
-const EXAM_COUNT = 40, EXAM_SEC = 40 * 60, PASS = 70;
-// 실제 시험 유형별 출제 수/배점 (유형 정보가 없으면 무작위 40문제, 문항당 2.5점)
-// 동영상 문제는 제외했으므로, 실제 시험의 동영상 1문제(5점) 자리는 사진형/일러스트형에서 대신 출제
+const EXAM_SEC = 40 * 60, PASS = 70;
+// 실제 시험 유형별 출제 수/배점. 동영상형(1문제, 5점)은 제외 -> 39문제, 만점 95점, 합격 70점
 const COMPOSITION = [
-  { types: ['text'], multi: false, n: 17, pts: 2 },
-  { types: ['text'], multi: true,  n: 4,  pts: 3 },
-  { types: ['sign'],               n: 5,  pts: 2 },
-  { types: ['photo'],              n: 6,  pts: 3 },
-  { types: ['illust'],             n: 7,  pts: 3 },
-  { types: ['photo', 'illust'],    n: 1,  pts: 5 },
+  { label: '문장형 4지1답', types: ['text'], multi: false, n: 17, pts: 2 },
+  { label: '문장형 4지2답', types: ['text'], multi: true,  n: 4,  pts: 3 },
+  { label: '일러스트형 5지2답', types: ['illust'],         n: 6,  pts: 3 },
+  { label: '사진형 5지2답', types: ['photo'],              n: 7,  pts: 3 },
+  { label: '안전표지형 4지1답', types: ['sign'],           n: 5,  pts: 2 },
 ];
+const EXAM_COUNT = COMPOSITION.reduce((a, c) => a + c.n, 0);          // 39
+const MAX_SCORE = COMPOSITION.reduce((a, c) => a + c.n * c.pts, 0);   // 95
 const SECTIONS = [[1, '문장형'], [681, '사진형'], [781, '일러스트형'], [866, '안전표지']];
 const TYPE_LABEL = { text: '문장형', sign: '안전표지', photo: '사진형', illust: '일러스트형', video: '동영상', image: '그림' };
 
@@ -75,6 +77,9 @@ function load() {
 let S = load();
 S.wrong = S.wrong.filter(id => byId.has(id));
 function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }
+const storageOk = (() => { try { localStorage.setItem('dlq_t', '1'); localStorage.removeItem('dlq_t'); return true; } catch { return false; } })();
+// 브라우저가 저장공간을 임의로 정리하지 않도록 '영구 저장' 요청 (지원 브라우저만)
+try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
 
 const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -124,7 +129,7 @@ function home() {
     <div class="card menu" onclick="go('wrong')"><h2>❌ 오답노트</h2>
       <div class="muted">틀린 문제 ${S.wrong.length}개</div></div>
     <div class="card menu" onclick="startExam()"><h2>📝 모의시험</h2>
-      <div class="muted">랜덤 ${EXAM_COUNT}문제 · ${EXAM_SEC / 60}분 · ${PASS}점 합격 · 실제 시험 유형 구성</div>
+      <div class="muted">랜덤 ${EXAM_COUNT}문제 · ${EXAM_SEC / 60}분 · ${MAX_SCORE}점 만점 중 ${PASS}점 이상 합격</div>
       ${S.exam ? '<div class="muted" style="color:var(--pri)">진행 중인 시험이 있습니다 → 이어하기</div>' : ''}</div>
   </div>
   <div class="card"><div class="row"><b>학습 위치 이동</b><span class="sp"></span>
@@ -133,10 +138,34 @@ function home() {
     <div class="row" style="margin-top:8px">${SECTIONS.map(([n, name]) => `<button onclick="S.last=${n - 1};save();go('study',{mode:'all'})">${name} (${n}~)</button>`).join('')}</div></div>
   <div class="card"><b>최근 모의시험</b>
     ${last.length ? last.map(e => `<div class="row" style="margin-top:6px"><span>${new Date(e.at).toLocaleString('ko-KR')}</span><span class="sp"></span>
-      <b style="color:${e.score >= PASS ? 'var(--ok)' : 'var(--bad)'}">${e.score}점 ${e.score >= PASS ? '합격' : '불합격'}</b></div>`).join('')
+      <b style="color:${e.score >= PASS ? 'var(--ok)' : 'var(--bad)'}">${e.score} / ${e.max || 100}점 ${e.score >= PASS ? '합격' : '불합격'}</b></div>`).join('')
       : '<div class="muted">아직 기록이 없습니다.</div>'}
   </div>
-  <div class="row"><span class="sp"></span><button onclick="if(confirm('학습 기록·오답노트·시험 기록을 모두 지울까요?')){localStorage.removeItem(KEY);S=load();go('home')}">기록 초기화</button></div>`;
+  <div class="card"><b>💾 진행상황 백업</b>
+    <div class="muted">진행상황은 이 브라우저에 자동 저장됩니다. 다른 PC·브라우저로 옮기거나 혹시 모를 삭제에 대비하려면 백업 파일로 저장하세요.</div>
+    <div class="row" style="margin-top:8px"><button onclick="exportData()">백업 파일 저장</button>
+      <button onclick="importFile.click()">백업 파일 불러오기</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden onchange="importData(this.files[0])">
+      <span class="sp"></span><button onclick="if(confirm('학습 기록·오답노트·시험 기록을 모두 지울까요?')){localStorage.removeItem(KEY);S=load();go('home')}">기록 초기화</button></div>
+    ${storageOk ? '' : '<div class="verdict bad">⚠ 이 브라우저는 저장소를 쓸 수 없어 진행상황이 저장되지 않습니다. 백업 파일을 이용하세요.</div>'}</div>`;
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(S)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `학과시험_진행상황_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function importData(file) {
+  if (!file) return;
+  file.text().then(t => {
+    const d = JSON.parse(t);
+    if (typeof d !== 'object' || !Array.isArray(d.wrong)) throw new Error();
+    if (!confirm('현재 기록을 백업 파일 내용으로 바꿀까요?')) return;
+    S = Object.assign(load(), d); S.wrong = S.wrong.filter(id => byId.has(id)); save(); go('home');
+  }).catch(() => alert('올바른 백업 파일이 아닙니다.'));
 }
 
 // ===== 학습 / 오답 풀이 =====
@@ -228,14 +257,14 @@ function pickExam() {
     const out = [], used = new Set();
     for (const c of COMPOSITION) {
       shuffle(Q.filter(q => fits(c)(q) && !used.has(q.id))).slice(0, c.n)
-        .forEach(q => { used.add(q.id); out.push({ id: q.id, pts: c.pts }); });
+        .forEach(q => { used.add(q.id); out.push({ id: q.id, pts: c.pts, cat: c.label }); });
     }
     return out;
   }
-  return shuffle(Q).slice(0, EXAM_COUNT).map(q => ({ id: q.id, pts: 100 / EXAM_COUNT }));
+  return shuffle(Q).slice(0, EXAM_COUNT).map(q => ({ id: q.id, pts: MAX_SCORE / EXAM_COUNT, cat: '기타' }));
 }
 function startExam() {
-  if (S.exam && S.exam.items.some(x => !byId.has(x.id))) S.exam = null;
+  if (S.exam && S.exam.items.some(x => !byId.has(x.id) || !x.cat)) S.exam = null;
   if (S.exam && !confirm('진행 중인 시험을 이어서 보시겠습니까?\n(취소 = 새 시험 시작)')) S.exam = null;
   if (!S.exam) {
     S.exam = { items: pickExam(), answers: {}, start: Date.now(), i: 0 };
@@ -250,7 +279,7 @@ function exam() {
     const it = E.items[E.i], q = byId.get(it.id), mine = E.answers[it.id] || [];
     const answeredN = E.items.filter(x => (E.answers[x.id] || []).length).length;
     document.getElementById('hdr').textContent = `모의시험 · ${answeredN}/${E.items.length} 답안 작성`;
-    $app.innerHTML = `<div class="card"><div class="row"><b>문제 ${E.i + 1} / ${E.items.length}</b><span class="tag">${Number.isInteger(it.pts) ? it.pts : it.pts.toFixed(1)}점</span>
+    $app.innerHTML = `<div class="card"><div class="row"><b>문제 ${E.i + 1} / ${E.items.length}</b><span class="tag">${it.cat}</span><span class="tag">배점 ${Number.isInteger(it.pts) ? it.pts : it.pts.toFixed(1)}점</span>
         <span class="sp"></span><span>남은 시간 </span><span class="timer" id="tm"></span></div></div>
       <div class="card">
         ${q.multi ? `<div class="muted">정답 ${need(q)}개를 고르세요</div>` : ''}
@@ -289,10 +318,10 @@ function exam() {
     const detail = E.items.map(it => {
       const q = byId.get(it.id), mine = E.answers[it.id] || [], ok = sameSet(mine, q.answer);
       if (ok) score += it.pts; else addWrong(q.id);
-      return { id: it.id, pts: it.pts, mine, ok };
+      return { id: it.id, pts: it.pts, cat: it.cat, mine, ok };
     });
     score = Math.round(score * 10) / 10;
-    const rec = { at: Date.now(), score, sec: Math.min(EXAM_SEC, Math.round((Date.now() - E.start) / 1000)), detail };
+    const rec = { at: Date.now(), score, max: MAX_SCORE, sec: Math.min(EXAM_SEC, Math.round((Date.now() - E.start) / 1000)), detail };
     S.exams.push(rec); S.exams = S.exams.slice(-30); S.exam = null; save();
     go('result', rec);
   }
@@ -310,8 +339,16 @@ function result(rec) {
   const pass = rec.score >= PASS, wrong = rec.detail.filter(d => !d.ok);
   document.getElementById('hdr').textContent = '시험 결과';
   $app.innerHTML = `<div class="card" style="text-align:center">
-      <p class="big" style="color:${pass ? 'var(--ok)' : 'var(--bad)'}">${rec.score}점</p>
+      <p class="big" style="color:${pass ? 'var(--ok)' : 'var(--bad)'}">${rec.score}점 <span class="muted" style="font-size:20px">/ ${rec.max || 100}점</span></p>
       <h2 style="margin:4px 0">${pass ? '🎉 합격' : '불합격'} <span class="muted">(합격 기준 ${PASS}점)</span></h2>
+      <table class="score">
+        <tr><th>유형</th><th>맞힌 문항</th><th>문항당 배점</th><th>득점 / 배점</th></tr>
+        ${[...new Set(rec.detail.map(d => d.cat))].map(cat => {
+          const ds = rec.detail.filter(d => d.cat === cat), okN = ds.filter(d => d.ok).length;
+          return `<tr><td>${cat || '-'}</td><td>${okN} / ${ds.length}</td><td>${ds[0].pts}점</td><td><b>${okN * ds[0].pts}</b> / ${ds.length * ds[0].pts}</td></tr>`;
+        }).join('')}
+        <tr><td><b>합계</b></td><td>${rec.detail.filter(d => d.ok).length} / ${rec.detail.length}</td><td></td><td><b>${rec.score}</b> / ${rec.max || 100}</td></tr>
+      </table>
       <div class="muted">맞힌 문제 ${rec.detail.length - wrong.length} / ${rec.detail.length} · 소요 ${rec.sec / 60 | 0}분 ${rec.sec % 60}초</div>
       <div class="row" style="justify-content:center;margin-top:12px"><button onclick="go('home')">홈</button><button class="pri" onclick="startExam()">새 모의시험</button></div></div>
     <div class="card"><div class="nav">${rec.detail.map((d, k) => `<button class="${d.ok ? 'c' : 'w'}" onclick="document.getElementById('r${k}')?.scrollIntoView({behavior:'smooth'})">${k + 1}</button>`).join('')}</div></div>
@@ -319,7 +356,7 @@ function result(rec) {
     ${rec.detail.map((d, k) => {
       if (d.ok) return '';
       const q = byId.get(d.id);
-      return `<div class="card" id="r${k}"><div><span class="qno">문제 ${k + 1}</span><span class="tag">원본 ${q.id}번</span></div>
+      return `<div class="card" id="r${k}"><div><span class="qno">문제 ${k + 1}</span><span class="tag">원본 ${q.id}번</span><span class="tag">${d.cat || ''} · ${d.pts}점</span></div>
         ${qBody(q)}
         ${q.options.map((o, j) => `<div class="opt ${q.answer.includes(j) ? 'correct' : d.mine.includes(j) ? 'wrong' : ''}" style="border:1px solid var(--line);border-radius:8px">${C[j]} ${esc(o)}</div>`).join('')}
         <div class="verdict bad">내 답: ${d.mine.length ? d.mine.map(j => C[j]).join(', ') : '미응답'} · 정답: ${q.answer.map(j => C[j]).join(', ')}</div>
